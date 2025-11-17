@@ -1,8 +1,7 @@
 # Smith Agents
 
 This repository hosts the dockerized "echo" and "codex" agent services used by
-the Smith IDE plugin. Clone it on its own (or consume it via the Smith repo) to
-run the agents locally with Docker Compose.
+the Smith IDE plugin. Clone it on its own to run the agents locally with Docker Compose.
 
 ## Prerequisites
 
