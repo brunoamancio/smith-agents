@@ -25,5 +25,5 @@ services:
       - LOG_LEVEL=DEBUG
       - CODEX_HOME=/app/codex-config
     volumes:
-      - ./workspace:/workspace
+      - ${SMITH_WORKDIR:-./workspace}:/workspace
       - ./codex/config:/app/codex-config
