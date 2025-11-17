@@ -2,7 +2,7 @@ services:
 
   echo-agent:
     build:
-      context: ..
+      context: .
       dockerfile: acp-agents/echo/Dockerfile
     image: smith-echo-agent
     container_name: smith-echo-agent
@@ -14,7 +14,7 @@ services:
 
   codex-agent:
     build:
-      context: ..
+      context: .
       dockerfile: acp-agents/codex/Dockerfile
     image: smith-codex-agent
     container_name: smith-codex-agent
