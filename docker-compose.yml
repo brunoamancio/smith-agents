@@ -27,4 +27,4 @@ services:
     volumes:
       # Host path with the files the agent is allowed to read/write
       - ${SMITH_WORKDIR:-./workspace}:/workspace
-      - ./codex/config:/app/codex-config
+      - ./acp-agents/codex/config:/app/codex-config
