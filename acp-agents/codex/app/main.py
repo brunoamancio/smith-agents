@@ -10,9 +10,19 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
 
 from acp_agents_common import discover_services_root
+from acp_agents_common.api_models import (
+    AgentDescribeRequest,
+    RunRequest,
+    SessionCancelRequest,
+    SessionDeleteRequest,
+    SessionLoadRequest,
+    SessionModeRequest,
+    SessionModelRequest,
+    SessionNewRequest,
+    SessionPruneRequest,
+)
 
 
 SERVICES_ROOT = discover_services_root(Path(__file__).resolve().parent)
@@ -127,74 +137,6 @@ def _build_session_response(result: Dict[str, Any]) -> Dict[str, Any]:
         "metadata": {ATTACHMENT_METADATA_KEY: _build_attachment_metadata(prompt_caps)},
     }
     return {"session": session_payload}
-
-
-class RunRequest(BaseModel):
-    agent_name: str
-    mode: str
-    session_id: Optional[str] = None
-    model_id: Optional[str] = None
-    input: list[Dict[str, Any]]
-    attachments: List[Attachment] = Field(default_factory=list)
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionNewRequest(BaseModel):
-    agent_name: str
-    client_session_id: str
-    mcpServers: Optional[List[Dict[str, Any]]] = None
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionLoadRequest(BaseModel):
-    agent_name: str
-    session_id: str
-    client_session_id: Optional[str] = None
-    mcpServers: Optional[List[Dict[str, Any]]] = None
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionModelRequest(BaseModel):
-    agent_name: str
-    session_id: str
-    model_id: str
-    client_session_id: Optional[str] = None
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionModeRequest(BaseModel):
-    agent_name: str
-    session_id: str
-    mode_id: str
-    client_session_id: Optional[str] = None
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionCancelRequest(BaseModel):
-    agent_name: str
-    session_id: str
-    client_session_id: Optional[str] = None
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionPruneRequest(BaseModel):
-    keep_session_ids: List[str] = Field(default_factory=list)
-
-
-class SessionDeleteRequest(BaseModel):
-    session_ids: List[str] = Field(default_factory=list)
 
 
 def _bearer_token(header: Optional[str]) -> Optional[str]:

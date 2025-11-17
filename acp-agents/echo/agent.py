@@ -8,13 +8,22 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
 
 from acp_agents_common import discover_services_root
+from acp_agents_common.api_models import (
+    AgentDescribeRequest,
+    RunRequest,
+    SessionCancelRequest,
+    SessionDeleteRequest,
+    SessionLoadRequest,
+    SessionModeRequest,
+    SessionModelRequest,
+    SessionNewRequest,
+    SessionPruneRequest,
+)
 from acp_agents_common.attachments import (
     ATTACHMENT_METADATA_INLINE_LIMIT_KEY,
     ATTACHMENT_METADATA_KEY,
-    Attachment,
     PROMPT_CAPABILITIES_KEY,
     PROMPT_CAPABILITY_EMBEDDED_CONTEXT,
     PROMPT_CAPABILITY_IMAGE,
@@ -27,14 +36,11 @@ if str(SERVICES_ROOT) not in sys.path:
 
 from acp_agents_common.mode_utils import (
     AGENT_NAME_KEY,
-    CLIENT_SESSION_ID_KEY,
     MODELS_BLOCK_KEY,
     MODE_AUTO,
     MODE_FULL_ACCESS,
-    MODE_ID_KEY,
     MODE_READ_ONLY,
     MODES_BLOCK_KEY,
-    MODEL_ID_KEY,
     RUN_EVENTS_KEY,
     RUN_ID_KEY,
     RUN_OUTPUT_KEY,
@@ -403,81 +409,6 @@ def _ensure_session_model(session: EchoSession, model_id: Optional[str]) -> None
         return
     _ensure_supported_model(model_id)
     session.current_model_id = model_id
-
-
-class SessionNewRequest(BaseModel):
-    agent_name: str = Field(alias=AGENT_NAME_KEY)
-    client_session_id: str = Field(alias=CLIENT_SESSION_ID_KEY)
-    mcpServers: Optional[List[Dict[str, Any]]] = Field(default=None, alias="mcpServers")
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionLoadRequest(BaseModel):
-    agent_name: str = Field(alias=AGENT_NAME_KEY)
-    session_id: str = Field(alias=SESSION_ID_KEY)
-    client_session_id: Optional[str] = Field(default=None, alias=CLIENT_SESSION_ID_KEY)
-    mcpServers: Optional[List[Dict[str, Any]]] = Field(default=None, alias="mcpServers")
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionModelRequest(BaseModel):
-    agent_name: str = Field(alias=AGENT_NAME_KEY)
-    session_id: str = Field(alias=SESSION_ID_KEY)
-    model_id: str = Field(alias=MODEL_ID_KEY)
-    client_session_id: Optional[str] = Field(default=None, alias=CLIENT_SESSION_ID_KEY)
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionModeRequest(BaseModel):
-    agent_name: str = Field(alias=AGENT_NAME_KEY)
-    session_id: str = Field(alias=SESSION_ID_KEY)
-    mode_id: str = Field(alias=MODE_ID_KEY)
-    client_session_id: Optional[str] = Field(default=None, alias=CLIENT_SESSION_ID_KEY)
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionCancelRequest(BaseModel):
-    agent_name: str = Field(alias=AGENT_NAME_KEY)
-    session_id: str = Field(alias=SESSION_ID_KEY)
-    client_session_id: Optional[str] = Field(default=None, alias=CLIENT_SESSION_ID_KEY)
-
-    class Config:
-        populate_by_name = True
-
-
-class SessionPruneRequest(BaseModel):
-    keep_session_ids: List[str] = Field(default_factory=list)
-
-
-class SessionDeleteRequest(BaseModel):
-    session_ids: List[str] = Field(default_factory=list)
-
-
-class AgentDescribeRequest(BaseModel):
-    agent_name: str = Field(alias=AGENT_NAME_KEY)
-
-    class Config:
-        populate_by_name = True
-
-
-class RunRequest(BaseModel):
-    agent_name: str = Field(alias=AGENT_NAME_KEY)
-    mode: str
-    session_id: Optional[str] = Field(default=None, alias=SESSION_ID_KEY)
-    model_id: Optional[str] = Field(default=None, alias=MODEL_ID_KEY)
-    input: List[Dict[str, Any]]
-    attachments: List[Attachment] = Field(default_factory=list)
-
-    class Config:
-        populate_by_name = True
 
 
 @app.get("/ping")
