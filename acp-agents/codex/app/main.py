@@ -190,11 +190,11 @@ class SessionCancelRequest(BaseModel):
 
 
 class SessionPruneRequest(BaseModel):
-    keep_codex_session_ids: List[str] = Field(default_factory=list)
+    keep_session_ids: List[str] = Field(default_factory=list)
 
 
 class SessionDeleteRequest(BaseModel):
-    codex_session_ids: List[str] = Field(default_factory=list)
+    session_ids: List[str] = Field(default_factory=list)
 
 
 def _bearer_token(header: Optional[str]) -> Optional[str]:
@@ -280,13 +280,13 @@ async def prune_sessions(
 ) -> JSONResponse:
     _log(
         "info",
-        "Pruning Codex sessions",
-        keep_ids=len(payload.keep_codex_session_ids),
-        keep_session_ids=payload.keep_codex_session_ids,
+        "Pruning agent sessions",
+        keep_ids=len(payload.keep_session_ids),
+        keep_session_ids=payload.keep_session_ids,
     )
 
     try:
-        result = await manager.prune_sessions(set(payload.keep_codex_session_ids))
+        result = await manager.prune_sessions(set(payload.keep_session_ids))
     except CodexError as exc:
         raise HTTPException(status_code=502, detail=exc.to_dict()) from exc
     except CodexProcessClosed as exc:
@@ -309,14 +309,14 @@ async def delete_sessions(
 ) -> JSONResponse:
     _log(
         "info",
-        "Deleting Codex sessions",
-        target_ids=len(payload.codex_session_ids),
-        codex_session_ids=payload.codex_session_ids,
+        "Deleting agent sessions",
+        target_ids=len(payload.session_ids),
+        session_ids=payload.session_ids,
     )
 
     _bearer_token(authorization)  # token not required, but process must be ready for future calls
     try:
-        result = await manager.delete_sessions(set(payload.codex_session_ids))
+        result = await manager.delete_sessions(set(payload.session_ids))
     except CodexError as exc:
         raise HTTPException(status_code=502, detail=exc.to_dict()) from exc
     except CodexProcessClosed as exc:

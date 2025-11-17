@@ -412,11 +412,11 @@ class SessionCancelRequest(BaseModel):
 
 
 class SessionPruneRequest(BaseModel):
-    keep_codex_session_ids: List[str] = Field(default_factory=list)
+    keep_session_ids: List[str] = Field(default_factory=list)
 
 
 class SessionDeleteRequest(BaseModel):
-    codex_session_ids: List[str] = Field(default_factory=list)
+    session_ids: List[str] = Field(default_factory=list)
 
 
 class RunRequest(BaseModel):
@@ -476,12 +476,12 @@ async def prune_sessions(
     payload: SessionPruneRequest,
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ) -> JSONResponse:
-    keep = {session_id.lower() for session_id in payload.keep_codex_session_ids if session_id}
+    keep = {session_id.lower() for session_id in payload.keep_session_ids if session_id}
     removed_ids = await _remove_sessions_matching(
         lambda session_id, keep=keep: session_id.lower() not in keep,
         reason="pruned",
     )
-    return JSONResponse({"result": {"removed_codex_session_ids": removed_ids, "removed_artifacts": []}})
+    return JSONResponse({"result": {"removed_session_ids": removed_ids, "removed_artifacts": []}})
 
 
 @app.post("/sessions/delete")
@@ -489,14 +489,14 @@ async def delete_sessions(
     payload: SessionDeleteRequest,
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ) -> JSONResponse:
-    targets = {session_id.lower() for session_id in payload.codex_session_ids if session_id}
+    targets = {session_id.lower() for session_id in payload.session_ids if session_id}
     if not targets:
-        return JSONResponse({"result": {"removed_codex_session_ids": [], "removed_artifacts": []}})
+        return JSONResponse({"result": {"removed_session_ids": [], "removed_artifacts": []}})
     removed_ids = await _remove_sessions_matching(
         lambda session_id, targets=targets: session_id.lower() in targets,
         reason="deleted",
     )
-    return JSONResponse({"result": {"removed_codex_session_ids": removed_ids, "removed_artifacts": []}})
+    return JSONResponse({"result": {"removed_session_ids": removed_ids, "removed_artifacts": []}})
 
 
 @app.post("/session/model")

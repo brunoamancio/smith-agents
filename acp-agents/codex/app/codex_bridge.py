@@ -825,9 +825,9 @@ class CodexManager:
             PROMPT_CAPABILITY_EMBEDDED_CONTEXT: embedded_supported,
         }
 
-    async def prune_sessions(self, keep_codex_session_ids: Set[str]) -> Dict[str, List[str]]:
-        normalized_keep = {session_id.lower() for session_id in keep_codex_session_ids}
-        removed_codex_session_ids: List[str] = []
+    async def prune_sessions(self, keep_session_ids: Set[str]) -> Dict[str, List[str]]:
+        normalized_keep = {session_id.lower() for session_id in keep_session_ids}
+        removed_session_ids: List[str] = []
 
         session_lookup: Dict[str, str] = {}
         for value in list(self._client_to_codex.values()):
@@ -840,29 +840,29 @@ class CodexManager:
             for lowercase_id in removable_lower:
                 original_id = session_lookup[lowercase_id]
                 if self._clear_session_tracking(original_id):
-                    removed_codex_session_ids.append(original_id)
+                    removed_session_ids.append(original_id)
 
         removed_artifacts = self._prune_session_files(normalized_keep)
-        if removed_codex_session_ids or removed_artifacts:
+        if removed_session_ids or removed_artifacts:
             _LOG.info(
                 json.dumps(
                     {
-                        "message": "pruned_codex_sessions",
-                        "removed_codex_session_ids": removed_codex_session_ids,
+                        "message": "pruned_sessions",
+                        "removed_session_ids": removed_session_ids,
                         "removed_artifacts": removed_artifacts,
                     }
                 )
             )
 
         return {
-            "removed_codex_session_ids": removed_codex_session_ids,
+            "removed_session_ids": removed_session_ids,
             "removed_artifacts": removed_artifacts,
         }
 
-    async def delete_sessions(self, codex_session_ids: Set[str]) -> Dict[str, List[str]]:
-        normalized_targets = {session_id.lower() for session_id in codex_session_ids if session_id}
+    async def delete_sessions(self, session_ids: Set[str]) -> Dict[str, List[str]]:
+        normalized_targets = {session_id.lower() for session_id in session_ids if session_id}
         if not normalized_targets:
-            return {"removed_codex_session_ids": [], "removed_artifacts": []}
+            return {"removed_session_ids": [], "removed_artifacts": []}
 
         session_lookup: Dict[str, str] = {}
         for value in list(self._client_to_codex.values()):
@@ -870,28 +870,28 @@ class CodexManager:
         for session_id in list(self._session_mcp_servers.keys()):
             session_lookup.setdefault(session_id.lower(), session_id)
 
-        removed_codex_session_ids: List[str] = []
+        removed_session_ids: List[str] = []
         async with self._lock:
             for lowercase_id in normalized_targets:
                 original_id = session_lookup.get(lowercase_id)
                 if not original_id:
                     continue
                 if self._clear_session_tracking(original_id):
-                    removed_codex_session_ids.append(original_id)
+                    removed_session_ids.append(original_id)
 
         removed_artifacts = self._remove_specific_session_artifacts(normalized_targets)
-        if removed_codex_session_ids or removed_artifacts:
+        if removed_session_ids or removed_artifacts:
             _LOG.info(
                 json.dumps(
                     {
-                        "message": "deleted_codex_sessions",
-                        "removed_codex_session_ids": removed_codex_session_ids,
+                        "message": "deleted_sessions",
+                        "removed_session_ids": removed_session_ids,
                         "removed_artifacts": removed_artifacts,
                     }
                 )
             )
         return {
-            "removed_codex_session_ids": removed_codex_session_ids,
+            "removed_session_ids": removed_session_ids,
             "removed_artifacts": removed_artifacts,
         }
 
