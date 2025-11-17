@@ -1,0 +1,7 @@
+# Codex configuration for the ACP container.
+# Run without OS sandboxing because Docker already provides isolation.
+sandbox_mode = "danger-full-access"
+approval_policy = "on-request"
+
+[projects."/workspace"]
+trust_level = "trusted"

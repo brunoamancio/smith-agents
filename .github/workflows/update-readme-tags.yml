@@ -1,0 +1,114 @@
+name: Refresh Docker Tags in README
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Branch to update (defaults to repository default branch)
+        required: false
+        default: ''
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_BRANCH: ${{ github.event.inputs.target_branch || github.event.repository.default_branch }}
+      DOCKER_REPOSITORY: th3b0yr0x/smith-codex-acp
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests packaging
+
+      - name: Regenerate Docker tag section
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import re
+          from packaging.version import InvalidVersion, Version
+
+          import requests
+
+          repository = os.environ["DOCKER_REPOSITORY"]
+          readme_path = pathlib.Path("acp-agents/codex/README.md")
+
+          tags = []
+          url = f"https://hub.docker.com/v2/repositories/{repository}/tags?page_size=100"
+          while url:
+              response = requests.get(url, timeout=30)
+              response.raise_for_status()
+              payload = response.json()
+              for item in payload.get("results", []):
+                  name = item.get("name")
+                  if not name:
+                      continue
+                  if name.startswith("sha"):
+                      continue
+                  if item.get("tag_status") == "inactive":
+                      continue
+                  tags.append(name)
+              url = payload.get("next")
+
+          unique_tags = []
+          for tag in tags:
+              if tag not in unique_tags:
+                  unique_tags.append(tag)
+
+          def sort_key(value: str):
+              if value == "latest":
+                  # ensure latest always leads, even when ordering descending
+                  return (0, Version("9999999"))
+              try:
+                  return (1, Version(value))
+              except InvalidVersion:
+                  return (2, value)
+
+          ordered_tags = sorted(unique_tags, key=sort_key, reverse=True)
+
+          tag_block = "<!-- TAGS-START -->\n"
+          tag_block += "\n".join(f"- `{tag}`" for tag in ordered_tags)
+          tag_block += "\n<!-- TAGS-END -->"
+
+          text = readme_path.read_text(encoding="utf-8")
+          pattern = re.compile(r"<!-- TAGS-START -->.*?<!-- TAGS-END -->", re.S)
+          if not pattern.search(text):
+              raise SystemExit("Tag markers not found in README.md")
+          readme_path.write_text(pattern.sub(tag_block, text), encoding="utf-8")
+          PY
+
+      - name: Commit changes
+        id: commit
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: refresh Docker tag list"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push changes
+        if: steps.commit.outputs.changed == 'true'
+        run: git push origin HEAD:${{ env.TARGET_BRANCH }}
+
+      - name: Publish overview to Docker Hub
+        uses: peter-evans/dockerhub-description@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.DOCKER_REPOSITORY }}
+          readme-filepath: acp-agents/codex/README.md
