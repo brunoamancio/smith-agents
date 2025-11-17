@@ -4,13 +4,14 @@ import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from acp_agents_common import discover_services_root
+from acp_agents_common.attachments import Attachment
 
 
 SERVICES_ROOT = discover_services_root(Path(__file__).resolve().parent)
@@ -84,14 +85,14 @@ class EchoSession:
     _watchers: Set[asyncio.Queue] = field(default_factory=set)
 
     def register_watcher(self) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue(maxsize=10)
+        queue: asyncio.Queue = asyncio.Queue()
         self._watchers.add(queue)
         return queue
 
     def unregister_watcher(self, queue: asyncio.Queue) -> None:
         self._watchers.discard(queue)
 
-    def broadcast(self, update: Dict[str, Any]) -> None:
+    async def broadcast(self, update: Dict[str, Any]) -> None:
         if not self._watchers:
             return
         stale: List[asyncio.Queue] = []
@@ -102,6 +103,19 @@ class EchoSession:
                 stale.append(queue)
         for queue in stale:
             self._watchers.discard(queue)
+
+    def close(self, reason: str) -> None:
+        if not self._watchers:
+            return
+        notice = {
+            "sessionId": self.session_id,
+            "sessionUpdate": "session_closed",
+            "reason": reason,
+        }
+        for queue in list(self._watchers):
+            queue.put_nowait(notice)
+            queue.put_nowait(None)
+        self._watchers.clear()
 
     def models_payload(self) -> Dict[str, Any]:
         return {
@@ -178,6 +192,28 @@ async def _session_by_remote(session_id: str) -> EchoSession:
     if session is None:
         raise HTTPException(status_code=404, detail={"message": f"Session '{session_id}' not found"})
     return session
+
+
+def _remove_client_mappings_locked(session_id: str) -> None:
+    stale_keys = [key for key, value in _client_to_session.items() if value == session_id]
+    for key in stale_keys:
+        _client_to_session.pop(key, None)
+
+
+async def _remove_sessions_matching(predicate: Callable[[str], bool], reason: str) -> List[str]:
+    sessions_to_close: List[EchoSession] = []
+    removed_ids: List[str] = []
+    async with _sessions_lock:
+        for session_id, session in list(_sessions_by_id.items()):
+            if not predicate(session_id):
+                continue
+            removed_ids.append(session_id)
+            _sessions_by_id.pop(session_id, None)
+            _remove_client_mappings_locked(session_id)
+            sessions_to_close.append(session)
+    for session in sessions_to_close:
+        session.close(reason)
+    return removed_ids
 
 
 def _extract_user_text(messages: List[Dict[str, Any]]) -> str:
@@ -330,6 +366,7 @@ def _ensure_session_model(session: EchoSession, model_id: Optional[str]) -> None
 class SessionNewRequest(BaseModel):
     agent_name: str = Field(alias=AGENT_NAME_KEY)
     client_session_id: str = Field(alias=CLIENT_SESSION_ID_KEY)
+    mcpServers: Optional[List[Dict[str, Any]]] = Field(default=None, alias="mcpServers")
 
     class Config:
         populate_by_name = True
@@ -339,6 +376,7 @@ class SessionLoadRequest(BaseModel):
     agent_name: str = Field(alias=AGENT_NAME_KEY)
     session_id: str = Field(alias=SESSION_ID_KEY)
     client_session_id: Optional[str] = Field(default=None, alias=CLIENT_SESSION_ID_KEY)
+    mcpServers: Optional[List[Dict[str, Any]]] = Field(default=None, alias="mcpServers")
 
     class Config:
         populate_by_name = True
@@ -364,15 +402,38 @@ class SessionModeRequest(BaseModel):
         populate_by_name = True
 
 
+class SessionCancelRequest(BaseModel):
+    agent_name: str = Field(alias=AGENT_NAME_KEY)
+    session_id: str = Field(alias=SESSION_ID_KEY)
+    client_session_id: Optional[str] = Field(default=None, alias=CLIENT_SESSION_ID_KEY)
+
+    class Config:
+        populate_by_name = True
+
+
+class SessionPruneRequest(BaseModel):
+    keep_codex_session_ids: List[str] = Field(default_factory=list)
+
+
+class SessionDeleteRequest(BaseModel):
+    codex_session_ids: List[str] = Field(default_factory=list)
+
+
 class RunRequest(BaseModel):
     agent_name: str = Field(alias=AGENT_NAME_KEY)
     mode: str
     session_id: Optional[str] = Field(default=None, alias=SESSION_ID_KEY)
     model_id: Optional[str] = Field(default=None, alias=MODEL_ID_KEY)
     input: List[Dict[str, Any]]
+    attachments: List[Attachment] = Field(default_factory=list)
 
     class Config:
         populate_by_name = True
+
+
+@app.get("/ping")
+def ping() -> Dict[str, str]:
+    return {"status": "ok"}
 
 
 @app.get("/agents")
@@ -389,7 +450,10 @@ def list_agents() -> Dict[str, Any]:
 
 
 @app.post("/session/new")
-async def create_session(payload: SessionNewRequest) -> Dict[str, Any]:
+async def create_session(
+    payload: SessionNewRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> Dict[str, Any]:
     agent = _ensure_agent(payload.agent_name)
     remote_session_id = str(uuid.uuid4())
     session = EchoSession(agent_name=agent, session_id=remote_session_id, client_session_id=payload.client_session_id)
@@ -398,14 +462,48 @@ async def create_session(payload: SessionNewRequest) -> Dict[str, Any]:
 
 
 @app.post("/session/load")
-async def load_session(payload: SessionLoadRequest) -> Dict[str, Any]:
+async def load_session(
+    payload: SessionLoadRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> Dict[str, Any]:
     agent, session = await _ensure_agent_session(payload.agent_name, payload.session_id)
     await _sync_client_session_mapping(agent, session, payload.client_session_id)
     return {"session": _session_payload(session)}
 
 
+@app.post("/sessions/prune")
+async def prune_sessions(
+    payload: SessionPruneRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> JSONResponse:
+    keep = {session_id.lower() for session_id in payload.keep_codex_session_ids if session_id}
+    removed_ids = await _remove_sessions_matching(
+        lambda session_id, keep=keep: session_id.lower() not in keep,
+        reason="pruned",
+    )
+    return JSONResponse({"result": {"removed_codex_session_ids": removed_ids, "removed_artifacts": []}})
+
+
+@app.post("/sessions/delete")
+async def delete_sessions(
+    payload: SessionDeleteRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> JSONResponse:
+    targets = {session_id.lower() for session_id in payload.codex_session_ids if session_id}
+    if not targets:
+        return JSONResponse({"result": {"removed_codex_session_ids": [], "removed_artifacts": []}})
+    removed_ids = await _remove_sessions_matching(
+        lambda session_id, targets=targets: session_id.lower() in targets,
+        reason="deleted",
+    )
+    return JSONResponse({"result": {"removed_codex_session_ids": removed_ids, "removed_artifacts": []}})
+
+
 @app.post("/session/model")
-async def set_session_model(payload: SessionModelRequest) -> Dict[str, Any]:
+async def set_session_model(
+    payload: SessionModelRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> Dict[str, Any]:
     agent, session = await _ensure_agent_session(payload.agent_name, payload.session_id)
     _ensure_session_model(session, payload.model_id)
     await _sync_client_session_mapping(agent, session, payload.client_session_id)
@@ -413,11 +511,35 @@ async def set_session_model(payload: SessionModelRequest) -> Dict[str, Any]:
 
 
 @app.post("/session/mode")
-async def set_session_mode(payload: SessionModeRequest) -> Dict[str, Any]:
+async def set_session_mode(
+    payload: SessionModeRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> Dict[str, Any]:
     agent, session = await _ensure_agent_session(payload.agent_name, payload.session_id)
     await _ensure_session_mode(session, payload.mode_id)
     await _sync_client_session_mapping(agent, session, payload.client_session_id)
     return {"session": _session_payload(session)}
+
+
+@app.post("/session/cancel")
+async def cancel_session_prompt(
+    payload: SessionCancelRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> JSONResponse:
+    agent, session = await _ensure_agent_session(payload.agent_name, payload.session_id)
+    await _sync_client_session_mapping(agent, session, payload.client_session_id)
+    await session.broadcast(
+        {
+            "sessionId": session.session_id,
+            "events": [
+                {
+                    "type": "session_cancelled",
+                    "reason": "cancelled_by_client",
+                }
+            ],
+        }
+    )
+    return JSONResponse({"result": "cancelled"})
 
 
 @app.post("/runs")
@@ -446,6 +568,8 @@ async def session_updates(session_id: str) -> StreamingResponse:
         try:
             while True:
                 update = await queue.get()
+                if update is None:
+                    break
                 yield f"data: {json.dumps(update)}\n\n"
         finally:
             session.unregister_watcher(queue)
