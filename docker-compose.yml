@@ -25,5 +25,5 @@ services:
       - LOG_LEVEL=DEBUG
       - CODEX_HOME=/app/codex-config
     volumes:
-      - 'C:\Users\bruno\RiderProjects\ConsoleApp1\:/workspace'
+      - ./workspace:/workspace
       - ./codex/config:/app/codex-config
