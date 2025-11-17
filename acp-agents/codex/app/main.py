@@ -239,6 +239,41 @@ async def list_agents() -> Dict[str, Any]:
     }
 
 
+@app.post("/agent/describe")
+async def describe_agent(
+    payload: AgentDescribeRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> Dict[str, Any]:
+    normalized = payload.agent_name.strip().lower()
+    if normalized != CODEX_AGENT_NAME:
+        raise HTTPException(
+            status_code=404,
+            detail={"message": f"Unknown agent '{payload.agent_name}'"},
+        )
+    token = _bearer_token(authorization)
+    try:
+        result = await manager.describe_agent(token, payload.agent_name)
+    except CodexError as exc:
+        raise HTTPException(status_code=502, detail=exc.to_dict()) from exc
+    except CodexProcessClosed as exc:
+        raise HTTPException(status_code=502, detail={"message": str(exc)}) from exc
+    except Exception as exc:  # pragma: no cover - defensive
+        _log("error", "Unexpected error while describing agent", error=str(exc))
+        raise HTTPException(status_code=500, detail={"message": str(exc)}) from exc
+
+    prompt_caps = result.get(PROMPT_CAPABILITIES_KEY) or manager.prompt_capabilities
+    metadata = {
+        ATTACHMENT_METADATA_KEY: _build_attachment_metadata(prompt_caps),
+    }
+    return {
+        "agent": payload.agent_name,
+        MODELS_BLOCK_KEY: result.get(MODELS_BLOCK_KEY),
+        MODES_BLOCK_KEY: result.get(MODES_BLOCK_KEY),
+        PROMPT_CAPABILITIES_KEY: prompt_caps,
+        "metadata": metadata,
+    }
+
+
 @app.post("/session/new")
 async def create_session(
     payload: SessionNewRequest,

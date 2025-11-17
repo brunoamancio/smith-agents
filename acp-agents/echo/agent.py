@@ -11,7 +11,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from acp_agents_common import discover_services_root
-from acp_agents_common.attachments import Attachment
+from acp_agents_common.attachments import (
+    ATTACHMENT_METADATA_INLINE_LIMIT_KEY,
+    ATTACHMENT_METADATA_KEY,
+    Attachment,
+    PROMPT_CAPABILITIES_KEY,
+    PROMPT_CAPABILITY_EMBEDDED_CONTEXT,
+    PROMPT_CAPABILITY_IMAGE,
+)
 
 
 SERVICES_ROOT = discover_services_root(Path(__file__).resolve().parent)
@@ -145,6 +152,41 @@ def _session_payload(session: EchoSession) -> Dict[str, Any]:
         SESSION_ID_KEY: session.session_id,
         MODELS_BLOCK_KEY: canonicalize_models(session.models_payload()),
         MODES_BLOCK_KEY: canonicalize_modes(session.modes_payload(), _MODE_PRESETS, session.agent_name),
+    }
+
+
+def _agent_capability_payload(agent_name: str) -> Dict[str, Any]:
+    models = canonicalize_models(
+        {
+            "current_model_id": DEFAULT_MODEL_ID,
+            "available_models": [dict(entry) for entry in _MODEL_ENTRIES],
+        }
+    )
+    modes = canonicalize_modes(
+        {
+            "current_mode_id": MODE_READ_ONLY,
+            "available_modes": [dict(entry) for entry in _MODE_ENTRIES],
+        },
+        _MODE_PRESETS,
+        agent_name,
+    )
+    prompt_caps = {
+        PROMPT_CAPABILITY_IMAGE: False,
+        PROMPT_CAPABILITY_EMBEDDED_CONTEXT: False,
+    }
+    metadata = {
+        ATTACHMENT_METADATA_KEY: {
+            ATTACHMENT_METADATA_INLINE_LIMIT_KEY: 0,
+            PROMPT_CAPABILITY_IMAGE: False,
+            PROMPT_CAPABILITY_EMBEDDED_CONTEXT: False,
+            "resourceLink": False,
+        }
+    }
+    return {
+        MODELS_BLOCK_KEY: models,
+        MODES_BLOCK_KEY: modes,
+        PROMPT_CAPABILITIES_KEY: prompt_caps,
+        "metadata": metadata,
     }
 
 
@@ -419,6 +461,13 @@ class SessionDeleteRequest(BaseModel):
     session_ids: List[str] = Field(default_factory=list)
 
 
+class AgentDescribeRequest(BaseModel):
+    agent_name: str = Field(alias=AGENT_NAME_KEY)
+
+    class Config:
+        populate_by_name = True
+
+
 class RunRequest(BaseModel):
     agent_name: str = Field(alias=AGENT_NAME_KEY)
     mode: str
@@ -447,6 +496,15 @@ def list_agents() -> Dict[str, Any]:
             }
         ]
     }
+
+
+@app.post("/agent/describe")
+async def describe_agent(
+    payload: AgentDescribeRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> Dict[str, Any]:
+    agent = _ensure_agent(payload.agent_name)
+    return {"agent": agent, **_agent_capability_payload(agent)}
 
 
 @app.post("/session/new")

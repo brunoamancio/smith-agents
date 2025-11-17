@@ -745,6 +745,15 @@ class CodexManager:
         )
         return payload
 
+    async def describe_agent(self, token: Optional[str], agent_name: str) -> Dict[str, Any]:
+        await self._ensure_process_ready(token)
+        codex_session = await self._create_codex_session([])
+        try:
+            payload = await self._load_codex_session(codex_session, [])
+        finally:
+            self._discard_ephemeral_session(codex_session)
+        return payload
+
     async def cancel_session_prompt_for_agent(
         self,
         token: Optional[str],
@@ -976,6 +985,11 @@ class CodexManager:
             self._session_mode_map.pop(codex_session_id, None)
             removed = True
         return removed
+
+    def _discard_ephemeral_session(self, codex_session_id: str) -> None:
+        self._session_mode_map.pop(codex_session_id, None)
+        self._clear_session_tracking(codex_session_id)
+        self._remove_specific_session_artifacts({codex_session_id.lower()})
 
     def _extract_session_id(self, path: Path) -> Optional[str]:
         match = _SESSION_ID_PATTERN.search(path.name)
