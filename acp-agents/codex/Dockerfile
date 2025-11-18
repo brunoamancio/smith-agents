@@ -26,7 +26,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN apk add --no-cache curl ca-certificates jq xxd
+RUN apk add --no-cache curl ca-certificates jq xxd bash
 
 RUN python -m pip install --upgrade pip==25.3
 
