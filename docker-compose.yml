@@ -28,3 +28,4 @@ services:
       # Host path with the files the agent is allowed to read/write
       - ${SMITH_WORKDIR:-./workspace}:/workspace
       - ./acp-agents/codex/config:/app/codex-config
+      - ./acp-agents/codex/config/config.toml:/app/codex-config/config.toml:ro
