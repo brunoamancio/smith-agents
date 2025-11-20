@@ -26,18 +26,18 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN apk add --no-cache curl ca-certificates jq xxd bash
+RUN apk add --no-cache curl ca-certificates jq xxd bash git
 
 RUN python -m pip install --upgrade pip==25.3
 
 COPY --from=codex_builder /build/target/release/codex-acp /usr/local/bin/codex-acp
 RUN chmod +x /usr/local/bin/codex-acp && mkdir -p /workspace
 
-COPY acp-agents/codex/requirements.txt /app/requirements.txt
+COPY agents/acp-agents/codex/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY acp-agents/codex/app /app/app
-COPY acp_agents_common /app/acp_agents_common
+COPY agents/acp-agents/codex/app /app/app
+COPY agents/acp_agents_common /app/acp_agents_common
 
 ENV CODEX_ACP_BIN=/usr/local/bin/codex-acp \
     CODEX_WORKDIR=/workspace \
